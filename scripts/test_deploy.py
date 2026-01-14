@@ -1,12 +1,19 @@
+
+import cv2
 from ultralytics import YOLO 
+
 model = YOLO("yolo11n.pt")
+video = cv2.VideoCapture(0)
 
-results = model(source=0, stream=true)
-
-for result in results:
-    boxes = result.boxes  # Boxes object for bounding box outputs
-    masks = result.masks  # Masks object for segmentation masks outputs
-    keypoints = result.keypoints  # Keypoints object for pose outputs
-    probs = result.probs  # Probs object for classification outputs
-    obb = result.obb  # Oriented boxes object for OBB outputs
-    result.show()  # display to screen
+try:
+    while True: 
+        _, frame = video.read()
+        result = model.predict(frame, verbose=False)
+        annotated = result[0].plot()
+        cv2.imshow("Fire Detection", annotated)
+        cv2.waitKey(1)
+except KeyboardInterrupt:
+    pass
+finally:
+    video.release()
+    cv2.destroyAllWindows()
