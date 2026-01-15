@@ -1,8 +1,12 @@
 
 import cv2
 from ultralytics import YOLO 
+import numpy as np 
+import torch
 
-model = YOLO("yolo11n.pt")
+model_path = "*model path*"
+model = torch.load(model_path)
+
 video = cv2.VideoCapture(0)
 
 try:
