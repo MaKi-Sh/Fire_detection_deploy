@@ -19,11 +19,12 @@ Step 6. Output image
   **********************************************************************************/
 
 //Load model
-string model_path = "\";
-cv::dnn::Net model = cv::dnn::readNetFromONNX("Model.onnx");
+string model_path = "\media\nvidia\0051-DA57\yolo11n.onnx";
+string model_name = "yolo11n.onnx";
+cv::dnn::Net model = cv::dnn::readNetFromONNX(model_name);
 
 //Load image 
-cv::VideoCapture cap(0);
+cv::VideoCapture cap(10);
 // for static images : cv::Mat image = cv::imread("path/to/your/image.jpg", cv::IMREAD_COLOR);
 if (!cap.isOpened()) {
     std::cerr << "Error: Could not open camera." << std::endl;
