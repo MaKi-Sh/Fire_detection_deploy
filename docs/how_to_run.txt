@@ -6,4 +6,10 @@ gst-launch-1.0 nvarguscamerasrc sensor-id=0 ! \
     v4l2sink device=/dev/video10
 
 Then in a seperate terminal run 
-pytho3 test_deploy.py
+python3 test_deploy.py
+
+For C++ DNNs approach first compile: 
+g++ test_deploy.cpp -o test_deploy -I/usr/include/opencv4 $(pkg-config --libs opencv4)
+
+Then run: 
+./test_deploy 
