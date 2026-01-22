@@ -1,19 +1,10 @@
 import cv2
-from ultralytics import YOLO 
-import numpy as np 
-import torch
+from ultralytics import YOLO
+import numpy as np
 
-model_path = "*model path*"
-model = torch.load(model_path)
-
-<<<<<<< HEAD
-video = cv2.VideoCapture(0)
-=======
-model = YOLO("yolo11n.pt")
+model_path = "/media/nvidia/0051-D5A7/yolo11s.pt"
+model = YOLO(model_path)
 video = cv2.VideoCapture(10)
-
-ret, frame = video.read()
->>>>>>> 47fc51adbdcd40f6c7f5f5b371a65dd01d2c5728
 
 try:
     while True: 

@@ -1,7 +1,7 @@
 #include <opencv2/opencv.hpp>
-#include <NvInfer.h>
-#include <cuda_runtime_api.h>
-
+//#include <NvInfer.h>
+//#include <cuda_runtime_api.h>
+#include <chrono>
 #include <vector>
 #include <string>
 #include <iostream>
@@ -18,20 +18,20 @@ Step 5. Postprocess image
 Step 6. Output image
   **********************************************************************************/
 
-//Load model
-string model_path = "\media\nvidia\0051-DA57\yolo11n.onnx";
-string model_name = "yolo11n.onnx";
-cv::dnn::Net model = cv::dnn::readNetFromONNX(model_name);
-
-//Load image 
-cv::VideoCapture cap(10);
-// for static images : cv::Mat image = cv::imread("path/to/your/image.jpg", cv::IMREAD_COLOR);
-if (!cap.isOpened()) {
-    std::cerr << "Error: Could not open camera." << std::endl;
-    return -1;
-}
-
 int main(){
+	//Load model
+	std::string model_path = "/media/nvidia/0051-D5A7/yolo11n.onnx";
+	cv::dnn::Net net = cv::dnn::readNetFromONNX(model_path);
+	net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+	net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
+	//Load image
+	cv::VideoCapture cap(10);
+	// for static images : cv::Mat image = cv::imread("path/to/your/image.jpg", cv::IMREAD_COLOR);
+	if (!cap.isOpened()) {
+		std::cerr << "Error: Could not open camera." << std::endl;
+		return -1;
+	}
+	auto prev_time = std::chrono::high_resolution_clock::now();
 	while(true){
 		cv::Mat frame;
 		bool success = cap.read(frame);
@@ -55,17 +55,17 @@ int main(){
 		cv::normalize(correct_frame, normalized_frame, 0, 255, cv::NORM_MINMAX, CV_8UC1);
 		
 		cv::Mat blob_image; 
-		cv::dnn:blobFromImage(normalized_frame, blob_image); 
+		blob_image = cv::dnn::blobFromImage(normalized_frame, 1.0/255.0, cv::Size(640, 640), cv::Scalar(), true, false); 
 
-		//inference 
+		//inference
 		net.setInput(blob_image);
-		cv::Mat final = net.forward();
+		cv::Mat output = net.forward();
 
 		//Postprocess
 		//make the cx, cy, w, h, into x1, x2, y1, y2 & confidence checking
 		std::vector<cv::Rect> boxes;
 		std::vector<float> confidences;
-		std::vector<int> all_indicies;
+		std::vector<int> class_ids;
 		int num_detections = output.size[2];
 		float* data = (float*)output.data;
 		int num_classes = 5; 
@@ -134,7 +134,7 @@ int main(){
 		}
 		for (int idx : all_indices) {
         	cv::rectangle(frame, boxes[idx], cv::Scalar(0, 0, 255), 2);
-        	cv::putText(frame, 
+                cv::putText(frame, 
         	            class_names[class_ids[idx]],
         	            boxes[idx].tl(), 
         	            cv::FONT_HERSHEY_SIMPLEX, 
@@ -142,11 +142,16 @@ int main(){
         	            cv::Scalar(0, 0, 255), 
         	            2);
 	    }
+	    auto curr_time = std::chrono::high_resolution_clock::now();
+            double ms = std::chrono::duration<double, std::milli>(curr_time - prev_time).count();
+            double fps = 1000.0 / ms;
+            prev_time = curr_time;
+	    cv::putText(frame, "FPS: " + std::to_string((int)fps), cv::Point(10, 30),
+                    cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
 	    cv::imshow("Fire Detection", frame);
 	    if (cv::waitKey(1) == 'q') break;
 	}
-	cap.release(); 
+	cap.release();
 	cv::destroyAllWindows();
+	return 0;
 }
-
-//Preprocessing 
