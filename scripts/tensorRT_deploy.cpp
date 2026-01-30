@@ -28,7 +28,7 @@ public:
 
 /************************************************************************************
 Steps for inference:
-Step 1. Load model
+Step 1. Load models
 Step 2. Load image
 Step 3. Preprocess image
 Step 4. Inference
