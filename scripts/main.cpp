@@ -8,7 +8,7 @@ constexpr int SMOKE_CLASS_ID = 4;       // "Smoke"
 
 // Check if a detection is a fire-related class
 bool isFireClass(int classId) {
-    return classId == FIRE_CLASS_ID || classId == CONTROLLED_FIRE_ID;
+    return classId == FIRE_CLASS_ID;
 }
 
 // Verify fire detection by checking if hot pixels from IR camera
@@ -153,7 +153,7 @@ int main() {
     // Configuration
     const std::string enginePath = "/media/nvidia/0051-D5A7/yolo11n.engine";
     const int rgbCameraId = 10;
-    const int irCameraId = 11;  // Adjust as needed for your IR camera
+    const int irCameraId = 1;  // PureThermal on /dev/video1
 
     const float confidenceThreshold = 0.5f;
     const float nmsThreshold = 0.4f;

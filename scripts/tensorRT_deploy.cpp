@@ -29,6 +29,8 @@ struct TensorRTContext {
     float* pinned_output = nullptr;  // Pinned host memory for faster transfers
     cudaStream_t stream = nullptr;   // CUDA stream for async operations
     void* bindings[2] = {nullptr, nullptr};
+    std::string input_name;          // Input tensor name for enqueueV3
+    std::string output_name;         // Output tensor name for enqueueV3
     std::vector<float> output_data;
     int input_size = 1 * 3 * 640 * 640;
     int output_size = 0;
@@ -83,17 +85,32 @@ bool initTensorRT(TensorRTContext& ctx, const std::string& engine_path) {
         return false;
     }
 
+    // Get tensor names for enqueueV3 API
+    int num_io_tensors = ctx.engine->getNbIOTensors();
+    for (int i = 0; i < num_io_tensors; i++) {
+        const char* name = ctx.engine->getIOTensorName(i);
+        if (ctx.engine->getTensorIOMode(name) == nvinfer1::TensorIOMode::kINPUT) {
+            ctx.input_name = name;
+        } else {
+            ctx.output_name = name;
+        }
+    }
+
     // Allocate GPU memory
     ctx.output_size = 1 * (4 + ctx.num_classes) * 8400;
-    cudaMalloc(&ctx.gpu_input, ctx.input_size * sizeof(float));
-    cudaMalloc(&ctx.gpu_output, ctx.output_size * sizeof(float));
+    cudaMalloc(reinterpret_cast<void**>(&ctx.gpu_input), ctx.input_size * sizeof(float));
+    cudaMalloc(reinterpret_cast<void**>(&ctx.gpu_output), ctx.output_size * sizeof(float));
     ctx.bindings[0] = ctx.gpu_input;
     ctx.bindings[1] = ctx.gpu_output;
     ctx.output_data.resize(ctx.output_size);
 
+    // Set tensor addresses for enqueueV3 API
+    ctx.exec_context->setTensorAddress(ctx.input_name.c_str(), ctx.gpu_input);
+    ctx.exec_context->setTensorAddress(ctx.output_name.c_str(), ctx.gpu_output);
+
     // Allocate pinned memory for faster CPU-GPU transfers
-    cudaMallocHost(&ctx.pinned_input, ctx.input_size * sizeof(float));
-    cudaMallocHost(&ctx.pinned_output, ctx.output_size * sizeof(float));
+    cudaMallocHost(reinterpret_cast<void**>(&ctx.pinned_input), ctx.input_size * sizeof(float));
+    cudaMallocHost(reinterpret_cast<void**>(&ctx.pinned_output), ctx.output_size * sizeof(float));
 
     // Create CUDA stream for async operations
     cudaStreamCreate(&ctx.stream);
@@ -162,8 +179,8 @@ cv::Mat preprocessFrame(const cv::Mat& frame, TensorRTContext& ctx) {
 
 // Run TensorRT inference (optimized with CUDA stream)
 void runInference(TensorRTContext& ctx) {
-	// Execute inference on stream
-	ctx.exec_context->enqueueV2(ctx.bindings, ctx.stream, nullptr);
+	// Execute inference on stream (using enqueueV3 for TensorRT 10+)
+	ctx.exec_context->enqueueV3(ctx.stream);
 
 	// Async copy output to pinned memory
 	cudaMemcpyAsync(ctx.pinned_output, ctx.gpu_output, ctx.output_size * sizeof(float),
