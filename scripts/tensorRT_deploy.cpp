@@ -147,8 +147,8 @@ int main(){
 
 	float* gpu_input;
 	float* gpu_output;
-	cudaMalloc(&gpu_input, input_size * sizeof(float));
-	cudaMalloc(&gpu_output, output_size * sizeof(float));
+	cudaMalloc((void**)&gpu_input, input_size * sizeof(float));
+	cudaMalloc((void**)&gpu_output, output_size * sizeof(float));
 
 	void* bindings[] = {gpu_input, gpu_output};
 

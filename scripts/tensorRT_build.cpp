@@ -40,20 +40,45 @@ int main(){
 
 	//Configure and build
 	IBuilderConfig* config = builder->createBuilderConfig();
-	config->setMemoryPoolLimit(MemoryPoolType::kWORKSPACE, 1U << 20);
-	config->setMemoryPoolLimit(MemoryPoolType::kTACTIC_SHARED_MEMORY, 48 << 10);
+	// Set workspace memory to 256 MB (increase if needed for larger models)
+	config->setMemoryPoolLimit(MemoryPoolType::kWORKSPACE, 256U << 20);
+
+	// Enable FP16 mode for Jetson devices (reduces memory and improves performance)
+	if (builder->platformHasFastFp16()) {
+		std::cout << "FP16 supported, enabling FP16 mode" << std::endl;
+		config->setFlag(BuilderFlag::kFP16);
+	}
+
+	std::cout << "Building TensorRT engine... This may take a few minutes." << std::endl;
 	IHostMemory* serializedModel = builder->buildSerializedNetwork(*network, *config);
-	
-	//Save model
-	ofstream engineFile("yolo11n.engine", std::ios::binary);
-	engineFile.write(reinterpret_cast<const char*>(serializedModel->data()), 
+
+	// Check if build succeeded
+	if (!serializedModel) {
+		std::cerr << "ERROR: Failed to build TensorRT engine!" << std::endl;
+		delete parser;
+		delete network;
+		delete config;
+		delete builder;
+		return 1;
+	}
+
+	std::cout << "Engine built successfully! Size: " << serializedModel->size() << " bytes" << std::endl;
+
+	//Save model to USB drive
+	string engine_path = "/media/nvidia/0051-D5A7/yolo11n.engine";
+	ofstream engineFile(engine_path, std::ios::binary);
+	engineFile.write(reinterpret_cast<const char*>(serializedModel->data()),
                  serializedModel->size());
 	engineFile.close();
 
-	//Clean up 
+	std::cout << "Engine saved to " << engine_path << std::endl;
+
+	//Clean up
 	delete parser;
 	delete network;
 	delete config;
 	delete builder;
-	delete serializedModel; 
+	delete serializedModel;
+
+	return 0;
 }
