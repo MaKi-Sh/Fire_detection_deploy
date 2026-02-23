@@ -1,4 +1,6 @@
 To run, first run 
+sudo modprobe v4l2loopback video_nr=10             
+then 
 gst-launch-1.0 nvarguscamerasrc sensor-id=0 ! \
     'video/x-raw(memory:NVMM),width=1280,height=720,framerate=60/1' ! \
     nvvidconv ! 'video/x-raw,format=BGRx' ! \
