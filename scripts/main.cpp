@@ -1,5 +1,6 @@
 #include "tensorRT_deploy.cpp"
 #include "IR_camera_detection.cpp"
+#include <limits>
 
 // Fire class index in YOLO model (based on class_names in TensorRTContext)
 constexpr int FIRE_CLASS_ID = 2;        // "Fire"
@@ -10,6 +11,10 @@ constexpr int SMOKE_CLASS_ID = 4;       // "Smoke"
 bool isFireClass(int classId) {
     return classId == FIRE_CLASS_ID;
 }
+
+// Global calibration homography (thermal -> RGB)
+cv::Mat gHomography;
+bool gHasCalibration = false;
 
 // Verify fire detection by checking if hot pixels from IR camera
 // fall within YOLO fire bounding boxes
@@ -27,21 +32,21 @@ bool verifyFireWithIR(const DetectionResult& yoloResult,
         }
     }
 
-    if (fireBoxes.empty()) {
-        return false;  // No fire detected by YOLO
-    }
-
-    if (!irDetection.info.detected) {
-        return false;  // No hot clusters detected by IR
-    }
-
     // Check if any hot pixel above threshold falls within a fire bounding box
     for (const auto& cluster : irDetection.clusters) {
         for (const Pixel& pix : cluster) {
             if (pix.temp < tempThreshold) continue;
 
-            // Scale IR coordinates to RGB frame coordinates
-            cv::Point scaledPoint = scalePixelCoords(pix, irFrameSize, rgbFrameSize);
+            // Map IR coordinates to RGB frame coordinates
+            cv::Point scaledPoint;
+            if (gHasCalibration) {
+                std::vector<cv::Point2f> src = {{(float)pix.x, (float)pix.y}};
+                std::vector<cv::Point2f> dst;
+                cv::perspectiveTransform(src, dst, gHomography);
+                scaledPoint = cv::Point((int)dst[0].x, (int)dst[0].y);
+            } else {
+                scaledPoint = scalePixelCoords(pix, irFrameSize, rgbFrameSize);
+            }
 
             // Check against all fire bounding boxes
             for (const cv::Rect& box : fireBoxes) {
@@ -51,6 +56,17 @@ bool verifyFireWithIR(const DetectionResult& yoloResult,
             }
         }
     }
+
+    if (!irDetection.info.detected) {
+        std::cout << "No IR clusters detected!"<<std::endl;
+	return false;  // No hot clusters detected by IR
+    }
+    std::cout << "IR clusters detected!" << std::endl; 
+
+    if (fireBoxes.empty()) {
+        return false;  // No fire detected by YOLO
+    }
+
 
     return false;
 }
@@ -138,7 +154,7 @@ void mainLoopIRFirst(TensorRTContext& ctx,
 
         // Show IR info if available
         if (useIR && irDetection.info.maxTemp > 0) {
-            std::string irInfo = "IR Max: " + std::to_string(static_cast<int>(irDetection.info.maxTemp)) + "C";
+            std::string irInfo = "IR Max: " + std::to_string(static_cast<int>(irDetection.info.maxTemp));
             cv::putText(displayFrame, irInfo, cv::Point(10, 110),
                         cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 128, 0), 2);
         }
@@ -151,13 +167,13 @@ void mainLoopIRFirst(TensorRTContext& ctx,
 
 int main() {
     // Configuration
-    const std::string enginePath = "/media/nvidia/0051-D5A7/yolo11n.engine";
+    const std::string enginePath = "/media/nvidia/0051-D5A7/Fire-detect_yolo11s_baseline_best.engine";
     const int rgbCameraId = 10;
     const int irCameraId = 1;  // PureThermal on /dev/video1
 
-    const float confidenceThreshold = 0.5f;
+    const float confidenceThreshold = 0.2f;
     const float nmsThreshold = 0.4f;
-    const float irTempThreshold = 100.0f;  // Celsius
+    const float irTempThreshold = 4.0f;  // Stddev multiplier for relative thresholding
     const int minClusterSize = 20;
 
     // Initialize TensorRT
@@ -183,7 +199,25 @@ int main() {
     }
 
     bool useIR = irCap.isOpened();
+
+    // Load calibration homography (thermal -> RGB) if available
+    if (useIR) {
+        cv::FileStorage fs("calibration.yml", cv::FileStorage::READ);
+        if (fs.isOpened()) {
+            fs["H"] >> gHomography;
+            fs.release();
+            gHasCalibration = true;
+            std::cout << "Loaded calibration homography from calibration.yml" << std::endl;
+        } else {
+            std::cout << "No calibration.yml found, using simple scaling" << std::endl;
+        }
+    }
+
     auto prevTime = std::chrono::high_resolution_clock::now();
+    auto startTime = prevTime;
+    int totalFrames = 0;
+    double minFPS = std::numeric_limits<double>::max();
+    double maxFPS = 0.0;
 
     std::cout << "Fire Detection System Started" << std::endl;
     std::cout << "Press 'q' to quit" << std::endl;
@@ -252,15 +286,19 @@ int main() {
         auto currTime = std::chrono::high_resolution_clock::now();
         double ms = std::chrono::duration<double, std::milli>(currTime - prevTime).count();
         prevTime = currTime;
-        drawFPS(displayFrame, 1000.0 / ms);
+        double fps = 1000.0 / ms;
+        drawFPS(displayFrame, fps);
+        if (fps < minFPS) minFPS = fps;
+        if (fps > maxFPS) maxFPS = fps;
+        totalFrames++;
 
         // Show IR info if available
         if (useIR && irDetection.info.maxTemp > 0) {
-            std::string irInfo = "IR Max: " + std::to_string(static_cast<int>(irDetection.info.maxTemp)) + "C";
-            cv::putText(displayFrame, irInfo, cv::Point(10, 110),
+            std::string irInfo = "IR Max: " + std::to_string(static_cast<int>(irDetection.info.maxTemp));
+            std::string irStatus = irDetection.info.detected ? " [HOT]" : "";
+            cv::putText(displayFrame, irInfo + irStatus, cv::Point(10, 110),
                         cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 128, 0), 2);
         }
-
         cv::imshow("Fire Detection", displayFrame);
 
         // Display thermal heatmap in separate window if available
@@ -269,6 +307,23 @@ int main() {
         }
 
         if (cv::waitKey(1) == 'q') break;
+
+        // TODO: TEMPORARY - auto-terminate after 1 minute
+        if (std::chrono::duration<double>(currTime - startTime).count() >= 60.0) {
+            std::cout << "Auto-terminating after 1 minute." << std::endl;
+            break;
+        }
+    }
+
+    // Print FPS summary
+    auto endTime = std::chrono::high_resolution_clock::now();
+    double totalSeconds = std::chrono::duration<double>(endTime - startTime).count();
+    if (totalFrames > 0 && totalSeconds > 0) {
+        std::cout << "\n=== FPS Summary ===" << std::endl;
+        std::cout << "Average FPS: " << totalFrames / totalSeconds << std::endl;
+        std::cout << "Min FPS:     " << minFPS << std::endl;
+        std::cout << "Max FPS:     " << maxFPS << std::endl;
+        std::cout << "Total:       " << totalFrames << " frames in " << totalSeconds << "s" << std::endl;
     }
 
     // Cleanup

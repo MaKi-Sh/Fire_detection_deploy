@@ -23,32 +23,50 @@ struct IRDetection {
 	std::vector<std::vector<Pixel>> clusters;
 };
 
-// Convert raw IR frame (uint16_t) to temperature in Celsius
+// Convert raw IR frame to float for processing.
+// Camera outputs 8-bit intensity (0-255), not radiometric temperature.
+// Values are relative: higher = hotter, but not calibrated to degrees.
 cv::Mat convertToTemperature(const cv::Mat& rawFrame) {
-	cv::Mat tempFrame(rawFrame.size(), CV_32F);
-	for (int i = 0; i < rawFrame.rows; i++) {
-		for (int j = 0; j < rawFrame.cols; j++) {
-			uint16_t rawVal = rawFrame.at<uint16_t>(i, j);
-			tempFrame.at<float>(i, j) = (static_cast<float>(rawVal) / 100.0f) - 273.15f;
-		}
+	cv::Mat tempFrame;
+	// Handle both 8-bit and 16-bit input
+	if (rawFrame.type() == CV_8UC1) {
+		rawFrame.convertTo(tempFrame, CV_32F);
+	} else if (rawFrame.type() == CV_8UC3) {
+		cv::Mat gray;
+		cv::cvtColor(rawFrame, gray, cv::COLOR_BGR2GRAY);
+		gray.convertTo(tempFrame, CV_32F);
+	} else if (rawFrame.type() == CV_16UC1) {
+		rawFrame.convertTo(tempFrame, CV_32F);
+	} else {
+		rawFrame.convertTo(tempFrame, CV_32F);
 	}
 	return tempFrame;
 }
 
-// Detect fire from IR temperature frame
+// Detect fire hotspots from IR frame using relative thresholding.
+// tempThreshold is a stddev multiplier: pixels above (mean + tempThreshold * stddev)
+// are considered "hot". A value of 3.0-5.0 works well for fire detection.
 IRDetection fireDetect(const cv::Mat& tempFrame, float tempThreshold, int minClusterSize) {
 	IRDetection detection;
 
-	// Find max temperature and location
+	// Find max value and location
 	double minVal, maxVal;
 	cv::Point minLoc, maxLoc;
 	cv::minMaxLoc(tempFrame, &minVal, &maxVal, &minLoc, &maxLoc);
 	detection.info.maxTemp = static_cast<float>(maxVal);
 	detection.info.hotspot = maxLoc;
 
+	// Compute dynamic threshold: mean + k * stddev
+	cv::Scalar meanVal, stddevVal;
+	cv::meanStdDev(tempFrame, meanVal, stddevVal);
+	float dynamicThreshold = static_cast<float>(meanVal[0] + tempThreshold * stddevVal[0]);
+
+	// Clamp threshold to valid range
+	if (dynamicThreshold > maxVal) dynamicThreshold = static_cast<float>(maxVal);
+
 	// Create binary mask of hot pixels
 	cv::Mat mask;
-	cv::threshold(tempFrame, mask, tempThreshold, 255, cv::THRESH_BINARY);
+	cv::threshold(tempFrame, mask, dynamicThreshold, 255, cv::THRESH_BINARY);
 
 	cv::Mat mask8u;
 	mask.convertTo(mask8u, CV_8U);

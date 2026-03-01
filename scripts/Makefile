@@ -19,16 +19,25 @@ MAIN_SRC := $(SRC_DIR)main.cpp
 TEST_SRC := $(SRC_DIR)test_deploy.cpp
 DEPLOY_SRC := $(SRC_DIR)tensorRT_deploy.cpp
 IR_SRC := $(SRC_DIR)IR_camera_detection.cpp
+CALIB_SRC := $(SRC_DIR)calibration.cpp
+DEMO_SRC := $(SRC_DIR)showing_calibration_RGB_to_IR.cpp
+TRT_BUILD_SRC := $(SRC_DIR)tensorRT_build.cpp
 
 # Object files
 MAIN_OBJ := $(OBJ_DIR)/main.o
 TEST_OBJ := $(OBJ_DIR)/test_deploy.o
 DEPLOY_OBJ := $(OBJ_DIR)/tensorRT_deploy.o
 IR_OBJ := $(OBJ_DIR)/IR_camera_detection.o
+CALIB_OBJ := $(OBJ_DIR)/calibration.o
+DEMO_OBJ := $(OBJ_DIR)/showing_calibration_RGB_to_IR.o
+TRT_BUILD_OBJ := $(OBJ_DIR)/tensorRT_build.o
 
 # Binaries
 MAIN_BIN := $(BIN_DIR)/fire_detection
 TEST_BIN := $(BIN_DIR)/test_deploy
+CALIB_BIN := $(BIN_DIR)/calibration
+DEMO_BIN := $(BIN_DIR)/showing_calibration_RGB_to_IR
+TRT_BUILD_BIN := $(BIN_DIR)/tensorRT_build
 
 # Model path
 ENGINE_PATH := /media/nvidia/0051-D5A7/yolo11n.engine
@@ -44,13 +53,13 @@ CUDA_LIB := -L$(CUDA_PATH)/lib64
 OPENCV_INCLUDE := -I/usr/include/opencv4 -I/usr/include
 OPENCV_LIB := -L/usr/lib -L/usr/local/lib \
               -lopencv_core -lopencv_imgproc -lopencv_highgui -lopencv_videoio \
-              -lopencv_imgcodecs -lopencv_dnn
+              -lopencv_imgcodecs -lopencv_dnn -lopencv_calib3d
 
 # TensorRT settings
 TENSORRT_PATH := /usr/local/tensorrt
 TENSORRT_INCLUDE := -I$(TENSORRT_PATH)/include
 TENSORRT_LIB := -L$(TENSORRT_PATH)/lib \
-                -lnvinfer -lnvinfer_plugin -lcudart
+                -lnvinfer -lnvinfer_plugin -lnvonnxparser -lcudart
 
 # C++ compiler flags
 CXX_FLAGS := -std=c++17 -Wall -Wextra -O3 -fPIC -pthread
@@ -63,10 +72,10 @@ INCLUDES := $(OPENCV_INCLUDE) $(CUDA_INCLUDE) $(TENSORRT_INCLUDE)
 LIBS := $(OPENCV_LIB) $(CUDA_LIB) $(TENSORRT_LIB) -lcudart -lcuda
 
 # ============================= TARGETS =============================
-.PHONY: all main test clean help info create-dirs
+.PHONY: all main test calibration demo trt-build clean help info create-dirs
 
-# Default target (only builds main application)
-all: create-dirs $(MAIN_BIN)
+# Default target (builds main application and calibration tool)
+all: create-dirs $(MAIN_BIN) $(CALIB_BIN) $(DEMO_BIN)
 
 # Create necessary directories
 create-dirs:
@@ -85,6 +94,24 @@ $(TEST_BIN): $(TEST_OBJ)
 	$(CXX) $(CXX_FLAGS) -o $@ $^ $(LIBS)
 	@echo "✓ Built: $(TEST_BIN)"
 
+# Calibration tool
+$(CALIB_BIN): $(CALIB_OBJ)
+	@echo "Linking calibration tool..."
+	$(CXX) $(CXX_FLAGS) -o $@ $^ $(LIBS)
+	@echo "✓ Built: $(CALIB_BIN)"
+
+# Calibration demo tool
+$(DEMO_BIN): $(DEMO_OBJ)
+	@echo "Linking calibration demo..."
+	$(CXX) $(CXX_FLAGS) -o $@ $^ $(LIBS)
+	@echo "✓ Built: $(DEMO_BIN)"
+
+# TensorRT engine builder
+$(TRT_BUILD_BIN): $(TRT_BUILD_OBJ)
+	@echo "Linking TensorRT engine builder..."
+	$(CXX) $(CXX_FLAGS) -o $@ $^ $(LIBS)
+	@echo "✓ Built: $(TRT_BUILD_BIN)"
+
 # Object files compilation
 $(OBJ_DIR)/main.o: $(MAIN_SRC)
 	@echo "Compiling main.cpp..."
@@ -92,6 +119,18 @@ $(OBJ_DIR)/main.o: $(MAIN_SRC)
 
 $(OBJ_DIR)/test_deploy.o: $(TEST_SRC)
 	@echo "Compiling test_deploy.cpp..."
+	$(CXX) $(CXX_FLAGS) $(INCLUDES) -c $< -o $@
+
+$(OBJ_DIR)/calibration.o: $(CALIB_SRC)
+	@echo "Compiling calibration.cpp..."
+	$(CXX) $(CXX_FLAGS) $(INCLUDES) -c $< -o $@
+
+$(OBJ_DIR)/showing_calibration_RGB_to_IR.o: $(DEMO_SRC)
+	@echo "Compiling showing_calibration_RGB_to_IR.cpp..."
+	$(CXX) $(CXX_FLAGS) $(INCLUDES) -c $< -o $@
+
+$(OBJ_DIR)/tensorRT_build.o: $(TRT_BUILD_SRC)
+	@echo "Compiling tensorRT_build.cpp..."
 	$(CXX) $(CXX_FLAGS) $(INCLUDES) -c $< -o $@
 
 # Note: tensorRT_deploy.cpp and IR_camera_detection.cpp are included in main.cpp
@@ -114,6 +153,7 @@ info:
 	@echo ""
 	@echo "Main Binary:        $(MAIN_BIN)"
 	@echo "Test Binary:        $(TEST_BIN)"
+	@echo "Calibration Binary: $(CALIB_BIN)"
 	@echo "Engine Path:        $(ENGINE_PATH)"
 	@echo "=============================================="
 
@@ -131,6 +171,21 @@ run: $(MAIN_BIN)
 test: $(TEST_BIN)
 	@echo "Running test application..."
 	$(TEST_BIN)
+
+# Build and run calibration tool
+calibration: $(CALIB_BIN)
+	@echo "Running calibration tool..."
+	$(CALIB_BIN)
+
+# Build and run calibration demo
+demo: $(DEMO_BIN)
+	@echo "Running calibration RGB->IR demo..."
+	$(DEMO_BIN)
+
+# Build and run TensorRT engine builder
+trt-build: $(TRT_BUILD_BIN)
+	@echo "Running TensorRT engine builder..."
+	$(TRT_BUILD_BIN)
 
 # Debug build
 debug: CXX_FLAGS += $(DEBUG_FLAGS)
@@ -170,6 +225,8 @@ help:
 	@echo "  make              - Build main and test applications"
 	@echo "  make main         - Build only main application"
 	@echo "  make test         - Build and run test application"
+	@echo "  make calibration  - Build and run calibration tool"
+	@echo "  make demo         - Build and run calibration RGB->IR demo"
 	@echo "  make run          - Build and run main application"
 	@echo "  make debug        - Build with debug symbols"
 	@echo "  make clean        - Remove all build artifacts"

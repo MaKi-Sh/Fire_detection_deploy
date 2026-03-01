@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 
-model_path = "/media/nvidia/0051-D5A7/yolo11n.pt"
+model_path = "/media/nvidia/0051-D5A7/best.pt"
 image_path = "/home/nvidia/Downloads/Fire.png"
 
 model = YOLO(model_path)
@@ -29,6 +29,10 @@ for result in results:
         cv2.putText(image, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
         print(f"Detected: {class_name} | Confidence: {confidence:.2f} | Box: ({x1}, {y1}) to ({x2}, {y2})")
+
+output_path = "/home/nvidia/Downloads/Fire_detected.png"
+cv2.imwrite(output_path, image)
+print(f"Saved result to {output_path}")
 
 cv2.imshow("Fire Detection - Press any key to close", image)
 cv2.waitKey(0)

@@ -83,7 +83,8 @@ void rgbClick(int event, int x, int y, int flags, void* userdata) {
         }
         else if (clickedButton(x, y, finishBtn) && rgbPoints.size() >= 4) {
             // Calculate and save homography
-            cv::Mat H = cv::findHomography(rgbPoints, thermalPoints);
+            // Compute thermal->RGB homography (inverted so main.cpp can map IR coords to RGB)
+            cv::Mat H = cv::findHomography(thermalPoints, rgbPoints);
             cv::FileStorage fs("calibration.yml", cv::FileStorage::WRITE);
             fs << "H" << H;
             fs.release();
@@ -108,7 +109,7 @@ void thermalClick(int event, int x, int y, int flags, void* userdata) {
 }
 
 int main() {
-    cv::VideoCapture rgb(0);
+    cv::VideoCapture rgb(10);
     cv::VideoCapture thermal("/dev/video1", cv::CAP_V4L2);
     thermal.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('Y','1','6',' '));
     thermal.set(cv::CAP_PROP_FRAME_WIDTH, 160);
